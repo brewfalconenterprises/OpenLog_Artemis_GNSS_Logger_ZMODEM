@@ -47,6 +47,77 @@ void waitForInput()
 //Waits for and returns the character that the user provides
 //Returns STATUS_GETNUMBER_TIMEOUT if input times out
 //Returns 'x' if user presses 'x'
+uint8_t getByteChoice(int numberOfSeconds, bool updateDZSERIAL)
+{
+  SerialFlush();
+
+  for (int i = 0; i < 50; i++) //Wait for any incoming chars to hit buffer
+  {
+    checkBattery();
+    delay(1);
+  }
+  
+  while (Serial.available() > 0) Serial.read(); //Clear buffer
+
+  if (settings.useTxRxPinsForTerminal == true)
+    while (Serial1.available() > 0) Serial1.read(); //Clear buffer
+
+  unsigned long startTime = millis();
+  byte incoming;
+  while (1)
+  {
+    if (Serial.available() > 0)
+    {
+      incoming = Serial.read();
+      if (updateDZSERIAL)
+      {
+        DSERIAL = &Serial;
+        ZSERIAL = &Serial;
+      }
+//      SerialPrint(F("byte: 0x"));
+//      Serial.println(incoming, HEX);
+//      if (settings.useTxRxPinsForTerminal == true)
+//        Serial1.println(incoming, HEX);
+      if (incoming >= 'a' && incoming <= 'z') break;
+      if (incoming >= 'A' && incoming <= 'Z') break;
+      if (incoming >= '0' && incoming <= '9') break;
+    }
+
+    if ((settings.useTxRxPinsForTerminal == true) && (Serial1.available() > 0))
+    {
+      incoming = Serial1.read();
+      if (updateDZSERIAL)
+      {
+        DSERIAL = &Serial1;
+        ZSERIAL = &Serial1;
+      }
+//      SerialPrint(F("byte: 0x"));
+//      Serial.println(incoming, HEX);
+//      if (settings.useTxRxPinsForTerminal == true)
+//        Serial1.println(incoming, HEX);
+      if (incoming >= 'a' && incoming <= 'z') break;
+      if (incoming >= 'A' && incoming <= 'Z') break;
+      if (incoming >= '0' && incoming <= '9') break;
+    }
+
+    if ( (millis() - startTime) / 1000 >= numberOfSeconds)
+    {
+      SerialPrintln(F("No user input received."));
+      return (STATUS_GETBYTE_TIMEOUT); //Timeout. No user input.
+    }
+
+    checkBattery();
+    delay(1);
+  }
+
+  return (incoming);
+}
+
+/*
+//Get single byte from user
+//Waits for and returns the character that the user provides
+//Returns STATUS_GETNUMBER_TIMEOUT if input times out
+//Returns 'x' if user presses 'x'
 uint8_t getByteChoice(int numberOfSeconds)
 {
   bool termOut = settings.enableTerminalOutput; //Store settings.enableTerminalOutput
@@ -90,6 +161,7 @@ uint8_t getByteChoice(int numberOfSeconds)
   settings.enableTerminalOutput = termOut; //Restore settings.enableTerminalOutput
   return (incoming);
 }
+*/
 
 //Get a string/value from user, remove all non-numeric values
 //Returns STATUS_GETNUMBER_TIMEOUT if input times out

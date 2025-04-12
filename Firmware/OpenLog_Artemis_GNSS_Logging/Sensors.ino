@@ -1,3 +1,6 @@
+#include "Sensors.h"
+#define HELPER_BUFFER_SIZE 1024
+
 //Init / begin comm with all enabled sensors
 bool beginSensors()
 {
@@ -659,4 +662,570 @@ float readVIN()
   vin = vin * settings.vinCorrectionFactor; //Correct for divider impedance (determined experimentally)
   return (vin);
 #endif
+}
+
+static void getHelperText(char* helperText, size_t lenText)
+{
+
+  helperText[0]='\0';
+
+  if (settings.logRTC)
+  {
+    if (settings.logDate)
+      strlcat(helperText, "rtcDate,", lenText);
+    if (settings.logTime)
+      strlcat(helperText, "rtcTime,", lenText);
+    if (settings.logMicroseconds)
+      strlcat(helperText, "micros,", lenText);
+  }
+
+  if (settings.logA11)
+    strlcat(helperText, "analog_11,", lenText);
+
+  if (settings.logA12)
+    strlcat(helperText, "analog_12,", lenText);
+
+  if (settings.logA13)
+    strlcat(helperText, "analog_13,", lenText);
+
+  if (settings.logA32)
+    strlcat(helperText, "analog_32,", lenText);
+
+  if (settings.logVIN)
+    strlcat(helperText, "VIN,", lenText);
+
+  if (online.IMU)
+  {
+    if (settings.imuUseDMP == false)
+    {
+      if (settings.logIMUAccel)
+        strlcat(helperText, "aX,aY,aZ,", lenText);
+      if (settings.logIMUGyro)
+        strlcat(helperText, "gX,gY,gZ,", lenText);
+      if (settings.logIMUMag)
+        strlcat(helperText, "mX,mY,mZ,", lenText);
+      if (settings.logIMUTemp)
+        strlcat(helperText, "imu_degC,", lenText);
+    }
+    else
+    {
+      if (settings.imuLogDMPQuat6)
+        strlcat(helperText, "Q6_1,Q6_2,Q6_3,", lenText);
+      if (settings.imuLogDMPQuat9)
+        strlcat(helperText, "Q9_1,Q9_2,Q9_3,HeadAcc,", lenText);
+      if (settings.imuLogDMPAccel)
+        strlcat(helperText, "RawAX,RawAY,RawAZ,", lenText);
+      if (settings.imuLogDMPGyro)
+        strlcat(helperText, "RawGX,RawGY,RawGZ,", lenText);
+      if (settings.imuLogDMPCpass)
+        strlcat(helperText, "RawMX,RawMY,RawMZ,", lenText);
+    }
+  }
+
+  //Step through list, printing values as we go
+  node *temp = head;
+  while (temp != NULL)
+  {
+
+    //If this node successfully begin()'d
+    if (temp->online == true)
+    {
+      //Switch on device type to set proper class and setting struct
+      switch (temp->deviceType)
+      {
+        case DEVICE_MULTIPLEXER:
+          {
+            //No data to print for a mux
+          }
+          break;
+        case DEVICE_LOADCELL_NAU7802:
+          {
+            struct_NAU7802 *nodeSetting = (struct_NAU7802 *)temp->configPtr;
+            if (nodeSetting->log)
+              strlcat(helperText, "weight(no unit),", lenText);
+          }
+          break;
+        case DEVICE_DISTANCE_VL53L1X:
+          {
+            struct_VL53L1X *nodeSetting = (struct_VL53L1X *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logDistance)
+                strlcat(helperText, "distance_mm,", lenText);
+              if (nodeSetting->logRangeStatus)
+                strlcat(helperText, "distance_rangeStatus(0=good),", lenText);
+              if (nodeSetting->logSignalRate)
+                strlcat(helperText, "distance_signalRate,", lenText);
+            }
+          }
+          break;
+        case DEVICE_GPS_UBLOX:
+          {
+            struct_uBlox *nodeSetting = (struct_uBlox *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logDate)
+                strlcat(helperText, "gps_Date,", lenText);
+              if (nodeSetting->logTime)
+                strlcat(helperText, "gps_Time,", lenText);
+              if (nodeSetting->logPosition)
+                strlcat(helperText, "gps_Lat,gps_Long,", lenText);
+              if (nodeSetting->logAltitude)
+                strlcat(helperText, "gps_Alt,", lenText);
+              if (nodeSetting->logAltitudeMSL)
+                strlcat(helperText, "gps_AltMSL,", lenText);
+              if (nodeSetting->logSIV)
+                strlcat(helperText, "gps_SIV,", lenText);
+              if (nodeSetting->logFixType)
+                strlcat(helperText, "gps_FixType,", lenText);
+              if (nodeSetting->logCarrierSolution)
+                strlcat(helperText, "gps_CarrierSolution,", lenText);
+              if (nodeSetting->logGroundSpeed)
+                strlcat(helperText, "gps_GroundSpeed,", lenText);
+              if (nodeSetting->logHeadingOfMotion)
+                strlcat(helperText, "gps_Heading,", lenText);
+              if (nodeSetting->logpDOP)
+                strlcat(helperText, "gps_pDOP,", lenText);
+              if (nodeSetting->logiTOW)
+                strlcat(helperText, "gps_iTOW,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PROXIMITY_VCNL4040:
+          {
+            struct_VCNL4040 *nodeSetting = (struct_VCNL4040 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logProximity)
+                strlcat(helperText, "prox(no unit),", lenText);
+              if (nodeSetting->logAmbientLight)
+                strlcat(helperText, "ambient_lux,", lenText);
+            }
+          }
+          break;
+        case DEVICE_TEMPERATURE_TMP102:
+          {
+            
+            struct_TMP102 *nodeSetting = (struct_TMP102 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+                 // Include unique ID's for bus/port/address for each TMP102 temp sensor
+                 char tempTxt[25];
+                 sprintf(tempTxt,"TMP102 %02X-%d-%02X DegC,", temp->muxAddress, temp->portNumber, temp->address);
+                 strlcat(helperText, tempTxt, lenText);
+            }
+          }
+          break;  
+        case DEVICE_TEMPERATURE_TMP117:
+          {
+            struct_TMP117 *nodeSetting = (struct_TMP117 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PRESSURE_MS5637:
+          {
+            struct_MS5637 *nodeSetting = (struct_MS5637 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logPressure)
+                strlcat(helperText, "pressure_hPa,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "temperature_degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PRESSURE_LPS25HB:
+          {
+            struct_LPS25HB *nodeSetting = (struct_LPS25HB *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logPressure)
+                strlcat(helperText, "pressure_hPa,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "temperature_degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PRESSURE_LPS28DFW:
+          {
+            struct_LPS28DFW *nodeSetting = (struct_LPS28DFW *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logPressure)
+                strlcat(helperText, "pressure_hPa,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "temperature_degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PHT_BME280:
+          {
+            struct_BME280 *nodeSetting = (struct_BME280 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logPressure)
+                strlcat(helperText, "pressure_Pa,", lenText);
+              if (nodeSetting->logHumidity)
+                strlcat(helperText, "humidity_%,", lenText);
+              if (nodeSetting->logAltitude)
+                strlcat(helperText, "altitude_m,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "temp_degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_UV_VEML6075:
+          {
+            struct_VEML6075 *nodeSetting = (struct_VEML6075 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logUVA)
+                strlcat(helperText, "uva,", lenText);
+              if (nodeSetting->logUVB)
+                strlcat(helperText, "uvb,", lenText);
+              if (nodeSetting->logUVIndex)
+                strlcat(helperText, "uvIndex,", lenText);
+            }
+          }
+          break;
+        case DEVICE_LIGHT_VEML7700:
+          {
+            struct_VEML7700 *nodeSetting = (struct_VEML7700 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              strlcat(helperText, "lux,", lenText);
+            }
+          }
+          break;
+        case DEVICE_VOC_CCS811:
+          {
+            struct_CCS811 *nodeSetting = (struct_CCS811 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logTVOC)
+                strlcat(helperText, "tvoc_ppb,", lenText);
+              if (nodeSetting->logCO2)
+                strlcat(helperText, "co2_ppm,", lenText);
+            }
+          }
+          break;
+        case DEVICE_VOC_SGP30:
+          {
+            struct_SGP30 *nodeSetting = (struct_SGP30 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logTVOC)
+                strlcat(helperText, "tvoc_ppb,", lenText);
+              if (nodeSetting->logCO2)
+                strlcat(helperText, "co2_ppm,", lenText);
+              if (nodeSetting->logH2)
+                strlcat(helperText, "H2,", lenText);
+              if (nodeSetting->logEthanol)
+                strlcat(helperText, "ethanol,", lenText);
+            }
+          }
+          break;
+        case DEVICE_CO2_SCD30:
+          {
+            struct_SCD30 *nodeSetting = (struct_SCD30 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logCO2)
+                strlcat(helperText, "co2_ppm,", lenText);
+              if (nodeSetting->logHumidity)
+                strlcat(helperText, "humidity_%,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PHT_MS8607:
+          {
+            struct_MS8607 *nodeSetting = (struct_MS8607 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logHumidity)
+                strlcat(helperText, "humidity_%,", lenText);
+              if (nodeSetting->logPressure)
+                strlcat(helperText, "hPa,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_TEMPERATURE_MCP9600:
+          {
+            struct_MCP9600 *nodeSetting = (struct_MCP9600 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "thermo_degC,", lenText);
+              if (nodeSetting->logAmbientTemperature)
+                strlcat(helperText, "thermo_ambientDegC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_HUMIDITY_AHT20:
+          {
+            struct_AHT20 *nodeSetting = (struct_AHT20 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logHumidity)
+                strlcat(helperText, "humidity_%,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_HUMIDITY_SHTC3:
+          {
+            struct_SHTC3 *nodeSetting = (struct_SHTC3 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logHumidity)
+                strlcat(helperText, "humidity_%,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_ADC_ADS122C04:
+          {
+            struct_ADS122C04 *nodeSetting = (struct_ADS122C04 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logCentigrade)
+                strlcat(helperText, "degC,", lenText);
+              if (nodeSetting->logFahrenheit)
+                strlcat(helperText, "degF,", lenText);
+              if (nodeSetting->logInternalTemperature)
+                strlcat(helperText, "degC,", lenText);
+              if (nodeSetting->logRawVoltage)
+                strlcat(helperText, "V*2.048/2^23,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PRESSURE_MPR0025PA1:
+          {
+            struct_MPR0025PA1 *nodeSetting = (struct_MPR0025PA1 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->usePSI)
+                strlcat(helperText, "PSI,", lenText);
+              if (nodeSetting->usePA)
+                strlcat(helperText, "Pa,", lenText);
+              if (nodeSetting->useKPA)
+                strlcat(helperText, "kPa,", lenText);
+              if (nodeSetting->useTORR)
+                strlcat(helperText, "torr,", lenText);
+              if (nodeSetting->useINHG)
+                strlcat(helperText, "inHg,", lenText);
+              if (nodeSetting->useATM)
+                strlcat(helperText, "atm,", lenText);
+              if (nodeSetting->useBAR)
+                strlcat(helperText, "bar,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PARTICLE_SNGCJA5:
+          {
+            struct_SNGCJA5 *nodeSetting = (struct_SNGCJA5 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logPM1)
+                strlcat(helperText, "PM1_0,", lenText);
+              if (nodeSetting->logPM25)
+                strlcat(helperText, "PM2_5,", lenText);
+              if (nodeSetting->logPM10)
+                strlcat(helperText, "PM10,", lenText);
+              if (nodeSetting->logPC05)
+                strlcat(helperText, "PC0_5,", lenText);
+              if (nodeSetting->logPC1)
+                strlcat(helperText, "PC1_0,", lenText);
+              if (nodeSetting->logPC25)
+                strlcat(helperText, "PC2_5,", lenText);
+              if (nodeSetting->logPC50)
+                strlcat(helperText, "PC5_0,", lenText);
+              if (nodeSetting->logPC75)
+                strlcat(helperText, "PC7_5,", lenText);
+              if (nodeSetting->logPC10)
+                strlcat(helperText, "PC10,", lenText);
+              if (nodeSetting->logSensorStatus)
+                strlcat(helperText, "Sensors,", lenText);
+              if (nodeSetting->logPDStatus)
+                strlcat(helperText, "PD,", lenText);
+              if (nodeSetting->logLDStatus)
+                strlcat(helperText, "LD,", lenText);
+              if (nodeSetting->logFanStatus)
+                strlcat(helperText, "Fan,", lenText);
+            }
+          }
+          break;
+        case DEVICE_VOC_SGP40:
+          {
+            struct_SGP40 *nodeSetting = (struct_SGP40 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logVOC)
+                strlcat(helperText, "VOCindex,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PRESSURE_SDP3X:
+          {
+            struct_SDP3X *nodeSetting = (struct_SDP3X *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logPressure)
+                strlcat(helperText, "Pa,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_PRESSURE_MS5837:
+          {
+            struct_MS5837 *nodeSetting = (struct_MS5837 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logPressure)
+                strlcat(helperText, "mbar,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "degC,", lenText);
+              if (nodeSetting->logDepth)
+                strlcat(helperText, "depth_m,", lenText);
+              if (nodeSetting->logAltitude)
+                strlcat(helperText, "alt_m,", lenText);
+            }
+          }
+          break;
+        case DEVICE_QWIIC_BUTTON:
+          {
+            struct_QWIIC_BUTTON *nodeSetting = (struct_QWIIC_BUTTON *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logPressed)
+                strlcat(helperText, "pressS,", lenText);
+              if (nodeSetting->logClicked)
+                strlcat(helperText, "clickS,", lenText);
+              if (nodeSetting->toggleLEDOnClick)
+                strlcat(helperText, "LED,", lenText);
+            }
+          }
+          break;
+        case DEVICE_BIO_SENSOR_HUB:
+          {
+            struct_BIO_SENSOR_HUB *nodeSetting = (struct_BIO_SENSOR_HUB *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logHeartrate)
+                strlcat(helperText, "bpm,", lenText);
+              if (nodeSetting->logConfidence)
+                strlcat(helperText, "conf%,", lenText);
+              if (nodeSetting->logOxygen)
+                strlcat(helperText, "O2%,", lenText);
+              if (nodeSetting->logStatus)
+                strlcat(helperText, "stat,", lenText);
+              if (nodeSetting->logExtendedStatus)
+                strlcat(helperText, "eStat,", lenText);
+              if (nodeSetting->logRValue)
+                strlcat(helperText, "O2R,", lenText);
+            }
+          }
+          break;
+        case DEVICE_ISM330DHCX:
+          {
+            struct_ISM330DHCX *nodeSetting = (struct_ISM330DHCX *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logAccel)
+                strlcat(helperText, "aX,aY,aZ,", lenText);
+              if (nodeSetting->logGyro)
+                strlcat(helperText, "gX,gY,gZ,", lenText);
+              if (nodeSetting->logDataReady)
+                strlcat(helperText, "dataRdy,", lenText);
+            }
+          }
+          break;
+        case DEVICE_MMC5983MA:
+          {
+            struct_MMC5983MA *nodeSetting = (struct_MMC5983MA *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logMag)
+                strlcat(helperText, "mX,mY,mZ,", lenText);
+              if (nodeSetting->logTemperature)
+                strlcat(helperText, "degC,", lenText);
+            }
+          }
+          break;
+        case DEVICE_KX134:
+          {
+            struct_KX134 *nodeSetting = (struct_KX134 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logAccel)
+                strlcat(helperText, "aX,aY,aZ,", lenText);
+              if (nodeSetting->logDataReady)
+                strlcat(helperText, "dataRdy,", lenText);
+            }
+          }
+          break;
+        case DEVICE_ADS1015:
+          {
+            struct_ADS1015 *nodeSetting = (struct_ADS1015 *)temp->configPtr;
+            if (nodeSetting->log)
+            {
+              if (nodeSetting->logA0)
+                strlcat(helperText, "A0mV,", lenText);
+              if (nodeSetting->logA1)
+                strlcat(helperText, "A1mV,", lenText);
+              if (nodeSetting->logA2)
+                strlcat(helperText, "A2mV,", lenText);
+              if (nodeSetting->logA3)
+                strlcat(helperText, "A3mV,", lenText);
+              if (nodeSetting->logA0A1)
+                strlcat(helperText, "A0A1mV,", lenText);
+              if (nodeSetting->logA0A3)
+                strlcat(helperText, "A0A3mV,", lenText);
+              if (nodeSetting->logA1A3)
+                strlcat(helperText, "A1A3mV,", lenText);
+              if (nodeSetting->logA2A3)
+                strlcat(helperText, "A2A3mV,", lenText);
+            }
+          }
+          break;
+        default:
+          SerialPrintf2("\nprinterHelperText device not found: %d\r\n", temp->deviceType);
+          break;
+      }
+    }
+    temp = temp->next;
+  }
+
+  if (settings.logHertz)
+    strlcat(helperText, "output_Hz,", lenText);
+
+  if (settings.printMeasurementCount)
+    strlcat(helperText, "count,", lenText);
+
+  strlcat(helperText, "\r\n", lenText);
+}
+
+void printHelperText(uint8_t outputDest)
+{
+  char helperText[HELPER_BUFFER_SIZE];
+  helperText[0] = '\0';
+
+  getHelperText(helperText, sizeof(helperText));
+
+  if(outputDest & OL_OUTPUT_SERIAL)
+    SerialPrint(helperText);
+
+  if ((outputDest & OL_OUTPUT_SDCARD) && (settings.logData == true) && (online.microSD))
+    gnssDataFile.print(helperText);
 }

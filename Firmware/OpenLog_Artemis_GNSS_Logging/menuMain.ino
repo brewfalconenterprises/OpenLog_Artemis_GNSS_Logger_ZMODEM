@@ -42,6 +42,11 @@ void menuMain()
       Serial.println(F("g) Reset GNSS"));
     }
 
+    if (online.microSD)
+    {
+      Serial.println(F("s) SD Card File Transfer"));
+    }
+
     Serial.println(F("r) Reset all OLA settings to default"));
 
     Serial.println("q) Quit: Close log file and power down");
@@ -50,7 +55,7 @@ void menuMain()
 
     Serial.println(F("x) Return to logging"));
 
-    byte incoming = getByteChoice(menuTimeout); //Timeout after x seconds
+    byte incoming = getByteChoice(menuTimeout, true); //Timeout after x seconds
 
     if (incoming == '1')
       menuLogRate(&prevTerminalOutput);
@@ -79,6 +84,70 @@ void menuMain()
     }
     else if (incoming == 'd')
       menuDebug(&prevPrintMajorDebugMessages, &prevPrintMinorDebugMessages);
+    
+    else if (incoming == 's')
+    {
+      
+      if (online.microSD)
+      {
+
+        //Close log files before showing sdCardMenu
+        if (online.dataLogging == true)
+        {
+          gnssDataFile.sync();
+          updateDataFileAccess(&gnssDataFile); // Update the file access time & date
+          gnssDataFile.close();
+        }
+
+
+        if (online.serialLogging == true)
+        {
+          if (incomingBufferSpot > 0)
+          {
+            //Write the remainder of the buffer
+            digitalWrite(PIN_STAT_LED, HIGH); //Toggle stat LED to indicating log recording
+            gnssDataFile.write(incomingBuffer, incomingBufferSpot); //Record the buffer to the card
+            digitalWrite(PIN_STAT_LED, LOW);
+
+            incomingBufferSpot = 0;
+
+            lastSeriaLogSyncTime = rtcMillis(); //Reset the last sync time to now
+          }
+
+          gnssDataFile.sync();
+          updateDataFileAccess(&gnssDataFile); // Update the file access time & date
+          gnssDataFile.close();
+        }
+
+        Serial.println(F(""));
+        Serial.println(F(""));
+        Serial.println(F(""));
+        sdCardMenu(sdCardMenuTimeout); // Located in zmodem.ino
+        Serial.println(F(""));
+        Serial.println(F(""));
+
+        if (online.dataLogging == true)
+        {
+          // Check if the current datafile was deleted
+          if (sd.exists(gnssDataFileName) == false)
+            strcpy(gnssDataFileName, findNextAvailableLog(settings.nextDataLogNumber, "dataLog"));
+          beginDataLogging(); //180ms
+          if (settings.showHelperText == true) 
+            printHelperText(OL_OUTPUT_SERIAL | OL_OUTPUT_SDCARD); //printHelperText to terminal and sensor file
+        }
+
+
+        if (online.serialLogging == true)
+        {
+          // Check if the current serial file was deleted
+          if (sd.exists(serialDataFileName) == false)
+            strcpy(serialDataFileName, findNextAvailableLog(settings.nextSerialLogNumber, "serialLog"));
+          beginSerialLogging();
+        }
+
+      }
+      
+    }
     else if (incoming == 'r')
     {
       Serial.println(F("\r\nResetting settings to factory defaults. Continue? Press 'y':"));

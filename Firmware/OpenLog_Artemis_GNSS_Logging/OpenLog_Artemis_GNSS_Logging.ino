@@ -144,6 +144,7 @@ TwoWire qwiic(PIN_QWIIC_SDA,PIN_QWIIC_SCL); //Will use pads 8/9
 
 //microSD Interface
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+//#include "SPI.h"
 #include <SPI.h>
 
 #include <SdFat.h> //SdFat v2.2.0 by Bill Greiman: http://librarymanager/All#SdFat_exFAT
@@ -166,17 +167,26 @@ File gnssDataFile; //File that all incoming GNSS data is written to
 #endif  // SD_FAT_TYPE
 
 char gnssDataFileName[30] = ""; //We keep a record of this file name so that we can re-open it upon wakeup from sleep
+char serialDataFileName[30] = ""; //We keep a record of this file name so that we can re-open it upon wakeup from sleep
 const int sdPowerDownDelay = 100; //Delay for this many ms before turning off the SD card power
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 //Add RTC interface for Artemis
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 #include "RTC.h" //Include RTC library included with the Aruino_Apollo3 core
+//#include "I2C_RTC.h"
 Apollo3RTC myRTC; //Create instance of RTC class
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 #define MAX_PAYLOAD_SIZE 384 // Override MAX_PAYLOAD_SIZE for getModuleInfo which can return up to 348 bytes
 #define FILE_BUFFER_SIZE 32768
+
+uint64_t lastSeriaLogSyncTime = 0;
+uint64_t lastAwakeTimeMillis;
+const int MAX_IDLE_TIME_MSEC = 500;
+char incomingBuffer[256 * 2]; //This size of this buffer is sensitive. Do not change without analysis using OpenLog_Serial.
+int incomingBufferSpot = 0;
+int charsReceived = 0; //Used for verifying/debugging serial reception
 
 #include "SparkFun_u-blox_GNSS_v3.h" //Click here to get the library: http://librarymanager/All#SparkFun_u-blox_GNSS_v3
 SFE_UBLOX_GNSS gpsSensor_ublox;
@@ -196,12 +206,51 @@ volatile static bool stopLoggingSeen = false; //Flag to indicate if we should st
 int lowBatteryReadings = 0; // Count how many times the battery voltage has read low
 const int lowBatteryReadingsLimit = 1000; // Don't declare the battery voltage low until we have had this many consecutive low readings (to reject sampling noise)
 bool ignorePowerLossInterrupt = true; // Ignore the power loss interrupt - when attaching the interrupt
+const int sdCardMenuTimeout = 60; // sdCard menu will exit/timeout after this number of second
+volatile static bool triggerEdgeSeen = false; //Flag to indicate if a trigger interrupt has been seen
+volatile static bool powerLossSeen = false; //Flag to indicate if a power loss event has been seen
 
 //-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 //unsigned long startTime = 0;
 
+void SerialPrint(const char *);
+void SerialPrint(const __FlashStringHelper *);
+void SerialPrintln(const char *);
+void SerialPrintln(const __FlashStringHelper *);
+void DoSerialPrint(char (*)(const char *), const char *, bool newLine = false);
+
 #define DUMP(varname) {Serial.printf("%s: %d\r\n", #varname, varname);}
+#define SerialPrintf1( var ) {Serial.printf( var ); if (settings.useTxRxPinsForTerminal == true) Serial1.printf( var );}
+#define SerialPrintf2( var1, var2 ) {Serial.printf( var1, var2 ); if (settings.useTxRxPinsForTerminal == true) Serial1.printf( var1, var2 );}
+#define SerialPrintf3( var1, var2, var3 ) {Serial.printf( var1, var2, var3 ); if (settings.useTxRxPinsForTerminal == true) Serial1.printf( var1, var2, var3 );}
+#define SerialPrintf4( var1, var2, var3, var4 ) {Serial.printf( var1, var2, var3, var4 ); if (settings.useTxRxPinsForTerminal == true) Serial1.printf( var1, var2, var3, var4 );}
+#define SerialPrintf5( var1, var2, var3, var4, var5 ) {Serial.printf( var1, var2, var3, var4, var5 ); if (settings.useTxRxPinsForTerminal == true) Serial1.printf( var1, var2, var3, var4, var5 );}
+// The Serial port for the Zmodem connection
+// must not be the same as DSERIAL unless all
+// debugging output to DSERIAL is removed
+Stream *ZSERIAL;
+// Serial output for debugging info for Zmodem
+Stream *DSERIAL;
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+#include "WDT.h" // WDT support
+volatile static bool petTheDog = true; // Flag to control whether the WDT ISR pets (resets) the timer.
+
+void startWatchdog()
+{
+  // Set watchdog timer clock to 16 Hz
+  // Set watchdog interrupt to 1 seconds (16 ticks / 16 Hz = 1 second)
+  // Set watchdog reset to 1.25 seconds (20 ticks / 16 Hz = 1.25 seconds)
+  // Note: Ticks are limited to 255 (8-bit)
+  wdt.configure(WDT_16HZ, 16, 20);
+  wdt.start(); // Start the watchdog
+}
+
+void stopWatchdog()
+{
+  wdt.stop();
+}
+//-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
 void setup() {
   //If 3.3V rail drops below 3V, system will power down and maintain RTC
@@ -480,6 +529,36 @@ void beginDataLogging()
 
 }
 
+void beginSerialLogging()
+{
+  if (online.microSD == true && settings.logSerial == true)
+  {
+    //If we don't have a file yet, create one. Otherwise, re-open the last used file
+    if (strlen(gnssDataFileName) == 0)
+      strcpy(gnssDataFileName, findNextAvailableLog(settings.nextSerialLogNumber, "serialLog"));
+
+    if (gnssDataFile.open(gnssDataFileName, O_CREAT | O_APPEND | O_WRITE) == false)
+    {
+      SerialPrintln(F("Failed to create serial log file"));
+      //systemError(ERROR_FILE_OPEN);
+      online.serialLogging = false;
+      return;
+    }
+
+    updateDataFileCreate(&gnssDataFile); // Update the file create time & date
+    gnssDataFile.sync();
+
+    //We need to manually restore the Serial1 TX and RX pins
+    configureSerial1TxRx();
+
+    Serial1.begin(settings.serialLogBaudRate);
+
+    online.serialLogging = true;
+  }
+  else
+    online.serialLogging = false;
+}
+
 void beginSerialOutput()
 {
   if ((settings.outputUBX == true) || (settings.outputNMEA == true))
@@ -565,3 +644,66 @@ void stopLoggingISR(void)
 {
   stopLoggingSeen = true;
 }
+
+//Power Loss ISR
+void powerLossISR(void)
+{
+  powerLossSeen = true;
+}
+
+//Trigger Pin ISR
+void triggerPinISR(void)
+{
+  triggerEdgeSeen = true;
+}
+
+void SerialFlush(void)
+{
+  Serial.flush();
+  if (settings.useTxRxPinsForTerminal == true)
+  {
+    Serial1.flush();
+  }
+}
+
+// gfvalvo's flash string helper code: https://forum.arduino.cc/index.php?topic=533118.msg3634809#msg3634809
+
+void SerialPrint(const char *line)
+{
+  DoSerialPrint([](const char *ptr) {return *ptr;}, line);
+}
+
+void SerialPrint(const __FlashStringHelper *line)
+{
+  DoSerialPrint([](const char *ptr) {return (char) pgm_read_byte_near(ptr);}, (const char*) line);
+}
+
+void SerialPrintln(const char *line)
+{
+  DoSerialPrint([](const char *ptr) {return *ptr;}, line, true);
+}
+
+void SerialPrintln(const __FlashStringHelper *line)
+{
+  DoSerialPrint([](const char *ptr) {return (char) pgm_read_byte_near(ptr);}, (const char*) line, true);
+}
+
+void DoSerialPrint(char (*funct)(const char *), const char *string, bool newLine)
+{
+  char ch;
+
+  while ((ch = funct(string++)))
+  {
+    Serial.print(ch);
+    if (settings.useTxRxPinsForTerminal == true)
+      Serial1.print(ch);
+  }
+
+  if (newLine)
+  {
+    Serial.println();
+    if (settings.useTxRxPinsForTerminal == true)
+      Serial1.println();
+  }
+}
+
