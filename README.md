@@ -1,12 +1,18 @@
-SparkFun OpenLog Artemis : GNSS Logger
+SparkFun OpenLog Artemis : GNSS Logger with ZMODEM Support
 ===========================================================
+
+** UPDATE **
+This OLA fork merges SD card read/write operations from the legacy OLA into the GNSS Logger firmware.
+
+You can access the original SparkFun OpenLog Artemis firmware [here](https://github.com/sparkfun/OpenLog_Artemis), which includes ZMODEM support to download log files through a serial interface via USB-C cable.
+
+You can access the specialized GNSS Logger fork of the SparkFun OLA firmware [here](https://github.com/sparkfun/OpenLog_Artemis_GNSS_Logger), which does a fine job logging GNSS observations, but does not contain ZMODEM support.
+
+This repo does not include firmware binaries; you will have to compile from source. Install the Arduino IDE and follow the instructions here.
 
 [![SparkFun OpenLog Artemis](https://cdn.sparkfun.com//assets/parts/1/5/7/5/3/16832-SparkFun_OpenLog_Artemis-01.jpg)](https://www.sparkfun.com/products/16832)
 
 [*SparkFun OpenLog Artemis (SPX-16832)*](https://www.sparkfun.com/products/16832)
-
-** UPDATE **
-This OLA fork merges SD card read/write operations from the legacy OLA into the GNSS Logger firmware.
 
 The OpenLog Artemis is an open source datalogger that comes preprogrammed to automatically log IMU, GPS, serial data, and various pressure, humidity, and distance sensors. All without writing a single line of code! OLA automatically detects, configures, and logs Qwiic sensors. OLA is designed for users who just need to capture a bunch of data to SD and get back to their larger project.
 
