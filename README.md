@@ -1,14 +1,15 @@
 SparkFun OpenLog Artemis : GNSS Logger with ZMODEM Support
 ===========================================================
 
-** UPDATE **
-This OLA fork merges SD card read/write operations from the legacy OLA into the GNSS Logger firmware.
+**UPDATE**
+
+This OLA fork merges SD card read/write operations (via ZMODEM) from the legacy OLA into the GNSS Logger firmware.
 
 You can access the original SparkFun OpenLog Artemis firmware [here](https://github.com/sparkfun/OpenLog_Artemis), which includes ZMODEM support to download log files through a serial interface via USB-C cable.
 
 You can access the specialized GNSS Logger fork of the SparkFun OLA firmware [here](https://github.com/sparkfun/OpenLog_Artemis_GNSS_Logger), which does a fine job logging GNSS observations, but does not contain ZMODEM support.
 
-This repo does not include firmware binaries; you will have to compile from source. Install the Arduino IDE and follow the instructions [here](https://github.com/brewfalconenterprises/OpenLog_Artemis_GNSS_Logger_ZMODEM/blob/main/COMPILE_BINARY.md).
+This repo does not include firmware binaries; you will have to compile from source. Install the Arduino IDE and follow the instructions [here](./COMPILE_BINARY.md).
 
 [![SparkFun OpenLog Artemis](https://cdn.sparkfun.com//assets/parts/1/5/7/5/3/16832-SparkFun_OpenLog_Artemis-01.jpg)](https://www.sparkfun.com/products/16832)
 
@@ -105,7 +106,6 @@ Please see [CHANGELOG.md](./CHANGELOG.md) for details.
 Repository Contents
 -------------------
 
-* **/Binaries** - The binary files for the different versions of the OLA firmware.
 * **/Firmware** - The main sketch that runs on the OpenLog Artemis.
 * **/Utils** - Python utilities to help debug any logging gremlins.
 
